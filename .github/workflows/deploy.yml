@@ -15,13 +15,17 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 8  # 匹配你项目使用的 pnpm 版本
+          version: 8
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22  # 🚀 放心大胆使用 Vercel 完美支持的 Node 22
           cache: 'pnpm'
+
+      # 🚀 核心关键：用 Node 22 安装依赖，但彻底跳过任何 C++ 扩展插件的现场编译
+      - name: Install Dependencies (Ignore Native Compiles)
+        run: pnpm install --ignore-scripts
 
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
@@ -32,7 +36,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Build Project (Using GitHub 7GB RAM!)
+      - name: Build Project
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
