@@ -1,7 +1,6 @@
 import { URL, fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import fs from 'node:fs'; 
-import { createRequire } from 'node:module'; 
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import wasm from 'vite-plugin-wasm';
 import { splashScreen } from 'vite-plugin-splash-screen';
@@ -21,105 +20,84 @@ import Icons from 'unplugin-icons/vite';
 import IconsResolver from 'unplugin-icons/resolver';
 import VueI18n from '@intlify/unplugin-vue-i18n/vite';
 
-const require = createRequire(import.meta.url);
-
-// 🚀 辅助工具：智能验证并补齐后缀（新增对 .ts / .tsx / .cjs 的全面支持）
-function findExistingFileWithExt(basePath: string) {
-  if (fs.existsSync(basePath) && fs.statSync(basePath).isFile()) return basePath;
-  const extensions = ['.js', '.mjs', '.cjs', '.ts', '.tsx', '/index.js', '/index.mjs', '/index.ts'];
-  for (const ext of extensions) {
-    if (fs.existsSync(basePath + ext)) return basePath + ext;
+// 🚀 终极雷达：全盘广度优先扫描，彻底击穿 pnpm 任何复杂的虚拟嵌套池，寻找依赖包的绝对路径
+function getPackageAbsoluteEntry(packageName: string): string {
+  const rootNodeModules = resolve(__dirname, 'node_modules');
+  
+  // 1. 优先检查根 node_modules 目录
+  const directPath = join(rootNodeModules, packageName);
+  if (fs.existsSync(directPath) && !fs.lstatSync(directPath).isSymbolicLink()) {
+    const entry = findEntryInDir(directPath, packageName);
+    if (entry) return entry;
   }
-  return null;
+
+  // 2. 广度优先穿透扫描 .pnpm 虚拟依赖黑盒
+  const queue: string[] = [rootNodeModules];
+  let visitedCount = 0;
+  
+  while (queue.length > 0 && visitedCount < 1000) {
+    visitedCount++;
+    const currentDir = queue.shift()!;
+    try {
+      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          // 如果找到了目标包名，并且该目录下含有 package.json，说明定位成功
+          if (entry.name === packageName && fs.existsSync(join(fullPath, 'package.json'))) {
+            const fileEntry = findEntryInDir(fullPath, packageName);
+            if (fileEntry) return fileEntry;
+          }
+          // 仅对特定高密度依赖池进行深挖，保证扫描性能
+          if (entry.name === '.pnpm' || entry.name.startsWith('@') || currentDir.endsWith('.pnpm') || currentDir.includes('.pnpm/')) {
+            queue.push(fullPath);
+          }
+        }
+      }
+    } catch (e) {}
+  }
+  return packageName;
 }
 
-// 🚀 三轨全能型依赖入口探测器
-function getPackageActualEntry(packageName: string) {
-  // 第一轨：利用 Node 22 原生 ESM 模块流解析
+// 🚀 入口分析核心：在给定的物理目录里提取最合规的执行脚本
+function findEntryInDir(dirPath: string, packageName: string): string | null {
   try {
-    const resolvedUrl = import.meta.resolve(packageName);
-    if (resolvedUrl) {
-      const resolvedPath = fileURLToPath(resolvedUrl);
-      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
-        return resolvedPath;
-      }
-    }
-  } catch (e) {}
-
-  // 第二轨：传统 CommonJS 核心层解析
-  try {
-    const nativePath = require.resolve(packageName);
-    if (nativePath && fs.existsSync(nativePath)) return nativePath;
-  } catch (e) {}
-
-  // 第三轨：深度穿透 pnpm 虚拟依赖黑盒进行全盘物理扫描
-  const rootNodeModules = resolve(__dirname, 'node_modules');
-  let packageDir = join(rootNodeModules, packageName);
-  
-  if (!fs.existsSync(packageDir)) {
-    const pnpmDir = join(rootNodeModules, '.pnpm');
-    if (fs.existsSync(pnpmDir)) {
-      try {
-        const dirs = fs.readdirSync(pnpmDir);
-        for (const d of dirs) {
-          const candidate = join(pnpmDir, d, 'node_modules', packageName);
-          if (fs.existsSync(candidate)) {
-            packageDir = candidate;
-            break;
-          }
-        }
-      } catch (e) {}
-    }
-  }
-
-  if (!fs.existsSync(packageDir)) return packageName;
-
-  const checkAndReturn = (relativePath: string) => {
-    return findExistingFileWithExt(join(packageDir, relativePath));
-  };
-
-  try {
-    const pkgJsonPath = join(packageDir, 'package.json');
+    const pkgJsonPath = join(dirPath, 'package.json');
     if (fs.existsSync(pkgJsonPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
-      
-      if (pkg.exports) {
-        if (typeof pkg.exports === 'string') { const res = checkAndReturn(pkg.exports); if (res) return res; }
-        const exp = pkg.exports['.'] || pkg.exports;
-        if (exp) {
-          if (typeof exp === 'string') { const res = checkAndReturn(exp); if (res) return res; }
-          else if (typeof exp === 'object') {
-            const val = exp.browser || exp.import || exp.module || exp.default;
-            if (typeof val === 'string') { const res = checkAndReturn(val); if (res) return res; }
+      const fields = [pkg.browser, pkg.module, pkg.main, pkg.exports?.['.']?.browser, pkg.exports?.['.']?.import, pkg.exports?.['.']?.default];
+      for (const field of fields) {
+        if (typeof field === 'string') {
+          const cleanField = field.replace(/^\.\//, '');
+          const exactPath = join(dirPath, cleanField);
+          if (fs.existsSync(exactPath) && fs.statSync(exactPath).isFile()) return exactPath;
+          // 智能追加缺失的后缀名进行验证
+          for (const ext of ['.js', '.mjs', '.ts', '.tsx', '/index.js', '/index.ts']) {
+            if (fs.existsSync(exactPath + ext)) return exactPath + ext;
           }
         }
       }
-      if (pkg.browser) {
-        if (typeof pkg.browser === 'string') { const res = checkAndReturn(pkg.browser); if (res) return res; }
-        if (typeof pkg.browser === 'object') {
-          for (const key in pkg.browser) {
-            const val = pkg.browser[key];
-            if (typeof val === 'string') { const res = checkAndReturn(val); if (res) return res; }
-          }
+    }
+    // 物理兜底机制：广度优先扫描该包的所有目录，抓取第一个合法的代码文件（排除类型文件 .d.ts）
+    const scanQueue = [dirPath];
+    while (scanQueue.length > 0) {
+      const curr = scanQueue.shift()!;
+      const files = fs.readdirSync(curr, { withFileTypes: true });
+      for (const f of files) {
+        const full = join(curr, f.name);
+        if (f.isFile() && (f.name.endsWith('.js') || f.name.endsWith('.mjs') || f.name.endsWith('.ts')) && !f.name.endsWith('.d.ts')) {
+          return full;
         }
       }
-      if (typeof pkg.module === 'string') { const res = checkAndReturn(pkg.module); if (res) return res; }
-      if (typeof pkg.main === 'string') { const res = checkAndReturn(pkg.main); if (res) return res; }
+      for (const f of files) {
+        const full = join(curr, f.name);
+        if (f.isDirectory() && !['node_modules', 'test', 'spec'].includes(f.name)) {
+          scanQueue.push(full);
+        }
+      }
     }
   } catch (e) {}
-
-  // 🚀 第四轨：针对未编译的纯 TS 源码包进行全盘物理扫描（增加对 .ts 和 .tsx 的降维打击）
-  const targetDirs = [join(packageDir, 'dist'), join(packageDir, 'lib'), join(packageDir, 'build'), join(packageDir, 'src'), packageDir];
-  for (const dir of targetDirs) {
-    if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
-      const files = fs.readdirSync(dir);
-      const bestMatch = files.find(f => ['index.js', 'index.mjs', 'main.js', 'index.ts', 'main.ts', 'index.browser.js', `${packageName}.js`, `${packageName}.mjs`, `${packageName}.ts`].includes(f)) 
-                     || files.find(f => f.endsWith('.js') || f.endsWith('.mjs') || f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.cjs'));
-      if (bestMatch) return join(dir, bestMatch);
-    }
-  }
-
-  return packageName;
+  return null;
 }
 
 const baseUrl = process.env.BASE_URL || '/';
@@ -135,9 +113,9 @@ if (!process.env.VITEST) {
   }
 }
 
-// 🚀 核心绝对路径雷达锁定
-const resolvedImageInBrowser = getPackageActualEntry('image-in-browser');
-const resolvedFanger = getPackageActualEntry('fanger');
+// 🚀 核心雷达进行物理锁定
+const resolvedImageInBrowser = getPackageAbsoluteEntry('image-in-browser');
+const resolvedFanger = getPackageAbsoluteEntry('fanger');
 console.log(`[探针日志] image-in-browser 精准定位至: ${resolvedImageInBrowser}`);
 console.log(`[探针日志] fanger 精准定位至: ${resolvedFanger}`);
 
@@ -153,7 +131,7 @@ const baseAliases: Record<string, string> = {
   'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
 };
 
-// 安全注入动态绝对别名映射
+// 确保只有获取到绝对路径时才注入别名映射，绝对避免死循环
 if (resolvedImageInBrowser && resolvedImageInBrowser !== 'image-in-browser') {
   baseAliases['image-in-browser'] = resolvedImageInBrowser;
 }
