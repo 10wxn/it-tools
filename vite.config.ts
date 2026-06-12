@@ -1,12 +1,11 @@
 import { URL, fileURLToPath } from 'node:url';
-import { resolve, join } from 'node:path';
-import fs from 'node:fs'; 
+import { resolve } from 'node:path';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import wasm from 'vite-plugin-wasm';
 import { splashScreen } from 'vite-plugin-splash-screen';
 
 import { defineConfig } from 'vite';
-import vue from '@vitejs/plugin-vue'; // 🚀 修复：这里已经改回了标准的 ESM 导入
+import vue from '@vitejs/plugin-vue'; 
 import vueJsx from '@vitejs/plugin-vue-jsx';
 import markdown from 'unplugin-vue-markdown/vite';
 import svgLoader from 'vite-svg-loader';
@@ -19,44 +18,6 @@ import { configDefaults } from 'vitest/config';
 import Icons from 'unplugin-icons/vite';
 import IconsResolver from 'unplugin-icons/resolver';
 import VueI18n from '@intlify/unplugin-vue-i18n/vite';
-
-// 安全的依赖入口探测器
-function safeResolvePackageEntry(packageName: string) {
-  const packageDir = resolve(__dirname, 'node_modules', packageName);
-  
-  if (!fs.existsSync(packageDir)) {
-    return packageName;
-  }
-
-  try {
-    const pkgJsonPath = join(packageDir, 'package.json');
-    if (fs.existsSync(pkgJsonPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
-      const targetField = pkg.browser || pkg.module || pkg.main;
-      if (targetField) {
-        const resolved = join(packageDir, targetField);
-        if (fs.existsSync(resolved)) return resolved;
-      }
-    }
-  } catch (e) {
-    // 忽略错误
-  }
-
-  const candidates = [
-    join(packageDir, 'dist', 'index.js'),
-    join(packageDir, 'dist', 'index.mjs'),
-    join(packageDir, 'index.js'),
-    join(packageDir, 'main.js'),
-  ];
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return packageName;
-}
 
 const baseUrl = process.env.BASE_URL || '/';
 
@@ -181,9 +142,6 @@ export default defineConfig({
       'onnxruntime-node': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      
-      'image-in-browser': safeResolvePackageEntry('image-in-browser'),
-      'fanger': safeResolvePackageEntry('fanger'),
     },
   },
   define: {
