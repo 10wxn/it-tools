@@ -1,6 +1,7 @@
 import { URL, fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import fs from 'node:fs'; 
+import { createRequire } from 'node:module'; // 🚀 引入原生模块创建器
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import wasm from 'vite-plugin-wasm';
 import { splashScreen } from 'vite-plugin-splash-screen';
@@ -20,23 +21,31 @@ import Icons from 'unplugin-icons/vite';
 import IconsResolver from 'unplugin-icons/resolver';
 import VueI18n from '@intlify/unplugin-vue-i18n/vite';
 
-// 🚀 辅助函数：智能探测并补齐缺失的后缀名（如将 ./main 补齐为 ./main.js）
-function findExistingFileWithExt(basePath: string) {
-  if (fs.existsSync(basePath) && fs.statSync(basePath).isFile()) return basePath;
-  const extensions = ['.js', '.mjs', '.cjs', '/index.js', '/index.mjs'];
-  for (const ext of extensions) {
-    if (fs.existsSync(basePath + ext)) return basePath + ext;
-  }
-  return null;
-}
+// 🚀 创建标准的 CommonJS require 实例，用于精确调用 Node 核心层路径解析器
+const require = createRequire(import.meta.url);
 
-// 🚀 终极贪婪型路径探针
+// 🚀 终极双轨制路径探针：Node 原生官方算法 + 贪婪型磁盘暴破扫描
 function getPackageActualEntry(packageName: string) {
+  // 1. 🌟 优先使用 Node 官方核心层解析算法。
+  // 它能完美处理结构合法的现代高级 ESM/CJS 混合导出（如 fanger），直接返回绝对物理路径。
+  try {
+    const nativePath = require.resolve(packageName);
+    if (nativePath) return nativePath;
+  } catch (e) {
+    // 如果报错（说明像 image-in-browser 一样 main 声明的文件在磁盘上根本不存在），则自动无缝降级到下方的扫盘逻辑
+  }
+
   const packageDir = resolve(__dirname, 'node_modules', packageName);
   if (!fs.existsSync(packageDir)) return packageName;
 
   const checkAndReturn = (relativePath: string) => {
-    return findExistingFileWithExt(join(packageDir, relativePath));
+    const basePath = join(packageDir, relativePath);
+    if (fs.existsSync(basePath) && fs.statSync(basePath).isFile()) return basePath;
+    const extensions = ['.js', '.mjs', '.cjs', '/index.js', '/index.mjs'];
+    for (const ext of extensions) {
+      if (fs.existsSync(basePath + ext)) return basePath + ext;
+    }
+    return null;
   };
 
   try {
@@ -44,7 +53,6 @@ function getPackageActualEntry(packageName: string) {
     if (fs.existsSync(pkgJsonPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
       
-      // 1. 解析 exports 字段
       if (pkg.exports) {
         if (typeof pkg.exports === 'string') {
           const res = checkAndReturn(pkg.exports);
@@ -65,7 +73,6 @@ function getPackageActualEntry(packageName: string) {
         }
       }
       
-      // 2. 解析 browser 字段
       if (pkg.browser) {
         if (typeof pkg.browser === 'string') {
           const res = checkAndReturn(pkg.browser);
@@ -82,7 +89,6 @@ function getPackageActualEntry(packageName: string) {
         }
       }
 
-      // 3. 解析传统 module / main 字段
       if (typeof pkg.module === 'string') {
         const res = checkAndReturn(pkg.module);
         if (res) return res;
@@ -92,11 +98,8 @@ function getPackageActualEntry(packageName: string) {
         if (res) return res;
       }
     }
-  } catch (e) {
-    // 静默容错
-  }
+  } catch (e) {}
 
-  // 4. 🚀 强力底线：如果配置元数据全部失效，直接物理扫描磁盘上真实存在的文件
   const targetDirs = [join(packageDir, 'dist'), join(packageDir, 'lib'), join(packageDir, 'build'), join(packageDir, 'src'), packageDir];
   for (const dir of targetDirs) {
     if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
@@ -134,7 +137,7 @@ if (!process.env.VITEST) {
   }
 }
 
-// 🚀 打印动态探测结果，方便在 GitHub Actions 日志中直观排查
+// 🚀 核心双轨锁定绝对文件路径
 const resolvedImageInBrowser = getPackageActualEntry('image-in-browser');
 const resolvedFanger = getPackageActualEntry('fanger');
 console.log(`[探针日志] image-in-browser 精准定位至: ${resolvedImageInBrowser}`);
@@ -240,7 +243,7 @@ export default defineConfig({
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       
-      // 🚀 终极锁定的绝对路径物理映射
+      // 🚀 强制锁定两个包的绝对路径，彻底堵死 Workbox 子编译的所有退路
       'image-in-browser': resolvedImageInBrowser,
       'fanger': resolvedFanger,
     },
