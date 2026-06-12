@@ -143,8 +143,10 @@ export default defineConfig({
       'onnxruntime-node': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      // 🚀 修复 Vite 4 在现代 Node 环境下对特定包的路径解析失败问题
-      'image-in-browser': 'image-in-browser/dist/index.js',
+      
+      // 🚀 别名修复系列：利用 Node 22 原生能力动态解析依赖包的精确物理入口，彻底解决打包器的路径迷路问题
+      'image-in-browser': fileURLToPath(new URL(import.meta.resolve('image-in-browser'))),
+      'fanger': fileURLToPath(new URL(import.meta.resolve('fanger'))),
     },
   },
   define: {
@@ -160,11 +162,11 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    sourcemap: false,               // 🚀 强制关闭源码映射，节省成倍的打包内存开销
-    minify: 'esbuild',              // 🚀 锁定 esbuild 高效压缩
-    reportCompressedSize: false,    // 🚀 关闭大小计算，防止大文件打包阶段计算超时与内存溢出
+    sourcemap: false,               
+    minify: 'esbuild',              
+    reportCompressedSize: false,    
     rollupOptions: {
-      maxParallelFileOps: 1,        // 🚀 极其关键：限制并发处理文件数为 1，用时间换空间，严防 OOM
+      maxParallelFileOps: 1,        
       external: ['regex', './out/isolated_vm', 'isolated-vm', 'onnxruntime-node', 'unpdf/pdfjs'],
       output: {
         format: 'es',
