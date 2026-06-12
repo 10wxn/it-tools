@@ -24,8 +24,8 @@ jobs:
           cache: 'pnpm'
 
       # 🚀 核心关键：用 Node 22 安装依赖，但彻底跳过任何 C++ 扩展插件的现场编译
-      - name: Install Dependencies (Ignore Native Compiles)
-        run: pnpm install --ignore-scripts
+      - name: Install Dependencies
+        run: pnpm install
 
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
