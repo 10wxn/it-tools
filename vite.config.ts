@@ -23,7 +23,6 @@ import VueI18n from '@intlify/unplugin-vue-i18n/vite';
 
 const require = createRequire(import.meta.url);
 
-// 辅助工具：智能验证并补齐后缀
 function findExistingFileWithExt(basePath: string) {
   if (fs.existsSync(basePath) && fs.statSync(basePath).isFile()) return basePath;
   const extensions = ['.js', '.mjs', '.cjs', '/index.js', '/index.mjs'];
@@ -33,9 +32,7 @@ function findExistingFileWithExt(basePath: string) {
   return null;
 }
 
-// 🚀 三轨贪婪型依赖入口探测器（Node22 ESM 官方算法 + pnpm 深度黑盒盲搜）
 function getPackageActualEntry(packageName: string) {
-  // 第一轨：利用 Node 22 原生 ESM 模块流解析（降维打击现代 ESM-Only 依赖包）
   try {
     const resolvedUrl = import.meta.resolve(packageName);
     if (resolvedUrl) {
@@ -46,17 +43,14 @@ function getPackageActualEntry(packageName: string) {
     }
   } catch (e) {}
 
-  // 第二轨：传统 CommonJS 核心层解析
   try {
     const nativePath = require.resolve(packageName);
     if (nativePath && fs.existsSync(nativePath)) return nativePath;
   } catch (e) {}
 
-  // 第三轨：深度穿透 pnpm 虚拟依赖黑盒进行全盘物理扫描
   const rootNodeModules = resolve(__dirname, 'node_modules');
   let packageDir = join(rootNodeModules, packageName);
   
-  // 如果根目录符号链接断裂，深入 .pnpm 依赖池盲搜
   if (!fs.existsSync(packageDir)) {
     const pnpmDir = join(rootNodeModules, '.pnpm');
     if (fs.existsSync(pnpmDir)) {
@@ -123,171 +117,84 @@ function getPackageActualEntry(packageName: string) {
 }
 
 const baseUrl = process.env.BASE_URL || '/';
-
 const VITE_AVAILABLE_LOCALES = process.env.VITE_AVAILABLE_LOCALES;
-console.log(`Building for locales: ${VITE_AVAILABLE_LOCALES}`);
 
-let includeLocales = [
-  resolve(__dirname, 'locales/en.yml'),
-];
+let includeLocales = [resolve(__dirname, 'locales/en.yml')];
 if (!process.env.VITEST) {
   if (!VITE_AVAILABLE_LOCALES || VITE_AVAILABLE_LOCALES === '*' || VITE_AVAILABLE_LOCALES === 'all') {
-    includeLocales = [
-      resolve(__dirname, 'src/tools/*/locales/**'),
-      resolve(__dirname, 'locales/**'),
-    ];
-  }
-  else {
+    includeLocales = [resolve(__dirname, 'src/tools/*/locales/**'), resolve(__dirname, 'locales/**')];
+  } else {
     const fileNameMatching = VITE_AVAILABLE_LOCALES.includes(',') ? `{${VITE_AVAILABLE_LOCALES}}` : VITE_AVAILABLE_LOCALES;
-    includeLocales = [
-      resolve(__dirname, `src/tools/*/locales/${fileNameMatching}.*`),
-      resolve(__dirname, `locales/${fileNameMatching}.*`),
-    ];
+    includeLocales = [resolve(__dirname, `src/tools/*/locales/${fileNameMatching}.*`), resolve(__dirname, `locales/${fileNameMatching}.*`)];
   }
 }
 
-// 🚀 双轨全面锁定物理绝对文件路径
 const resolvedImageInBrowser = getPackageActualEntry('image-in-browser');
 const resolvedFanger = getPackageActualEntry('fanger');
 console.log(`[探针日志] image-in-browser 精准定位至: ${resolvedImageInBrowser}`);
 console.log(`[探针日志] fanger 精准定位至: ${resolvedFanger}`);
 
+// 🚀 声明基础基础别名映射
+const baseAliases: Record<string, string> = {
+  '@': fileURLToPath(new URL('./src', import.meta.url)),
+  'node:fs/promises': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+  'node:fs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+  'fs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+  '@babel/core': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+  'isolated-vm': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+  'onnxruntime-node': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+  'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+  'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+};
+
+// 🚀 核心防御防御逻辑：只有拿到绝对路径时才注入别名，严禁添加类似 'fanger': 'fanger' 的向导垃圾数据
+if (resolvedImageInBrowser && resolvedImageInBrowser !== 'image-in-browser') {
+  baseAliases['image-in-browser'] = resolvedImageInBrowser;
+}
+if (resolvedFanger && resolvedFanger !== 'fanger') {
+  baseAliases['fanger'] = resolvedFanger;
+}
+
 export default defineConfig({
   plugins: [
-    VueI18n({
-      runtimeOnly: true,
-      compositionOnly: true,
-      fullInstall: true,
-      include: includeLocales,
-      strictMessage: false,
-      escapeHtml: true,
-    }),
+    VueI18n({ runtimeOnly: true, compositionOnly: true, fullInstall: true, include: includeLocales, strictMessage: false, escapeHtml: true }),
     AutoImport({
-      imports: [
-        'vue',
-        'vue-router',
-        '@vueuse/core',
-        'vue-i18n',
-        {
-          'naive-ui': ['useDialog', 'useMessage', 'useNotification', 'useLoadingBar'],
-        },
-      ],
-      vueTemplate: true,
-      eslintrc: {
-        enabled: true,
-      },
+      imports: ['vue', 'vue-router', '@vueuse/core', 'vue-i18n', { 'naive-ui': ['useDialog', 'useMessage', 'useNotification', 'useLoadingBar'] }],
+      vueTemplate: true, eslintrc: { enabled: true }
     }),
     Icons({ compiler: 'vue3' }),
-    vue({
-      include: [/\.vue$/, /\.md$/],
-    }),
-    vueJsx(),
-    markdown(),
-    svgLoader(),
+    vue({ include: [/\.vue$/, /\.md$/] }),
+    vueJsx(), markdown(), svgLoader(),
     VitePWA({
       registerType: 'autoUpdate',
-      workbox: {
-        globPatterns: (process.env.VITE_VERCEL_DEPLOY ? ['**\/*.{css,html}'] : ['**\/*.{js,wasm,css,html}']),
-        maximumFileSizeToCacheInBytes: 25 * 1024 ** 2,
-      },
+      workbox: { globPatterns: (process.env.VITE_VERCEL_DEPLOY ? ['**\/*.{css,html}'] : ['**\/*.{js,wasm,css,html}']), maximumFileSizeToCacheInBytes: 25 * 1024 ** 2 },
       strategies: 'generateSW',
       manifest: {
-        name: 'IT Tools',
-        description: 'Aggregated set of useful tools for developers.',
-        display: 'standalone',
-        start_url: `${baseUrl}?utm_source=pwa&utm_medium=pwa`,
-        scope: baseUrl,
-        orientation: 'any',
-        theme_color: '#18a058',
-        background_color: '#f1f5f9',
+        name: 'IT Tools', description: 'Aggregated set of useful tools for developers.', display: 'standalone',
+        start_url: `${baseUrl}?utm_source=pwa&utm_medium=pwa`, scope: baseUrl, orientation: 'any', theme_color: '#18a058', background_color: '#f1f5f9',
         icons: [
-          {
-            src: `${baseUrl}favicon-16x16.png`,
-            type: 'image/png',
-            sizes: '16x16',
-          },
-          {
-            src: `${baseUrl}favicon-32x32.png`,
-            type: 'image/png',
-            sizes: '32x32',
-          },
-          {
-            src: `${baseUrl}android-chrome-192x192.png`,
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: `${baseUrl}android-chrome-512x512.png`,
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable',
-          },
-        ],
-      },
+          { src: `${baseUrl}favicon-16x16.png`, type: 'image/png', sizes: '16x16' },
+          { src: `${baseUrl}favicon-32x32.png`, type: 'image/png', sizes: '32x32' },
+          { src: `${baseUrl}android-chrome-192x192.png`, sizes: '192x192', type: 'image/png' },
+          { src: `${baseUrl}android-chrome-512x512.png`, sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+        ]
+      }
     }),
-    Components({
-      dirs: ['src/'],
-      extensions: ['vue', 'md'],
-      include: [/\.vue$/, /\.vue\?vue/, /\.md$/],
-      resolvers: [NaiveUiResolver(), IconsResolver({ prefix: 'icon' })],
-    }),
-    Unocss(),
-    nodePolyfills(),
-    wasm(),
-    splashScreen({
-      logoSrc: 'logo.svg',
-      splashBg: '#383838',
-    }),
+    Components({ dirs: ['src/'], extensions: ['vue', 'md'], include: [/\.vue$/, /\.vue\?vue/, /\.md$/], resolvers: [NaiveUiResolver(), IconsResolver({ prefix: 'icon' })] }),
+    Unocss(), nodePolyfills(), wasm(), splashScreen({ logoSrc: 'logo.svg', splashBg: '#383838' })
   ],
   base: baseUrl,
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-      'node:fs/promises': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      'node:fs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      'fs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      '@babel/core': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      'isolated-vm': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      'onnxruntime-node': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
-      
-      // 🚀 给 PWA (Workbox) 喂入无懈可击的物理绝对路径
-      'image-in-browser': resolvedImageInBrowser,
-      'fanger': resolvedFanger,
-    },
+    alias: baseAliases // 🚀 挂载防御安全的动态映射表
   },
-  define: {
-    'import.meta.env.PACKAGE_VERSION': JSON.stringify(process.env.npm_package_version),
-  },
-  test: {
-    exclude: [...configDefaults.exclude, '**/*.e2e.spec.ts'],
-    server: {
-      deps: {
-        inline: ['otpauth-migration', 'proto'],
-      },
-    },
-  },
+  define: { 'import.meta.env.PACKAGE_VERSION': JSON.stringify(process.env.npm_package_version) },
+  test: { exclude: [...configDefaults.exclude, '**/*.e2e.spec.ts'], server: { deps: { inline: ['otpauth-migration', 'proto'] } } },
   build: {
-    target: 'esnext',
-    sourcemap: false,               
-    minify: 'esbuild',              
-    reportCompressedSize: false,    
-    rollupOptions: {
-      maxParallelFileOps: 1,        
-      external: ['regex', './out/isolated_vm', 'isolated-vm', 'onnxruntime-node', 'unpdf/pdfjs'],
-      output: {
-        format: 'es',
-      },
-      cache: false,
-    },
+    target: 'esnext', sourcemap: false, minify: 'esbuild', reportCompressedSize: false,
+    rollupOptions: { external: ['regex', './out/isolated_vm', 'isolated-vm', 'onnxruntime-node', 'unpdf/pdfjs'], output: { format: 'es' }, cache: false, maxParallelFileOps: 1 }
   },
   optimizeDeps: {
     include: ['isolated-vm', 'pdfjs-dist', 'onnxruntime-node', 'onnxruntime-web', 'unpdf', 'unpdf/pdfjs', ...(process.env.VERCEL ? ['webcrypto-liner-shim'] : [])],
-    esbuildOptions: {
-      supported: {
-        'top-level-await': true,
-      },
-    },
-  },
+    esbuildOptions: { supported: { 'top-level-await': true } }
+  }
 });
