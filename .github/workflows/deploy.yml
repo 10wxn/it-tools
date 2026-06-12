@@ -5,9 +5,13 @@ on:
     branches:
       - chore/all-my-stuffs  # 如果你的主分支叫 master，请改为 master
 
+# 🚀 核心魔法：全局注入 Node 运行参数，解锁 6GB（6144MB）堆内存，彻底根治 OOM 爆内存
+env:
+  NODE_OPTIONS: "--max-old-space-size=6144"
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -20,10 +24,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22  # 🚀 放心大胆使用 Vercel 完美支持的 Node 22
+          node-version: 22
           cache: 'pnpm'
 
-      # 🚀 核心关键：用 Node 22 安装依赖，但彻底跳过任何 C++ 扩展插件的现场编译
+      # 采用 package.json 锁定的 neverBuiltDependencies 安全安装
       - name: Install Dependencies
         run: pnpm install
 
