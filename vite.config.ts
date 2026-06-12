@@ -1,7 +1,7 @@
 import { URL, fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import fs from 'node:fs'; 
-import { createRequire } from 'node:module'; // 🚀 引入原生模块创建器
+import { createRequire } from 'node:module'; 
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import wasm from 'vite-plugin-wasm';
 import { splashScreen } from 'vite-plugin-splash-screen';
@@ -21,31 +21,62 @@ import Icons from 'unplugin-icons/vite';
 import IconsResolver from 'unplugin-icons/resolver';
 import VueI18n from '@intlify/unplugin-vue-i18n/vite';
 
-// 🚀 创建标准的 CommonJS require 实例，用于精确调用 Node 核心层路径解析器
 const require = createRequire(import.meta.url);
 
-// 🚀 终极双轨制路径探针：Node 原生官方算法 + 贪婪型磁盘暴破扫描
+// 辅助工具：智能验证并补齐后缀
+function findExistingFileWithExt(basePath: string) {
+  if (fs.existsSync(basePath) && fs.statSync(basePath).isFile()) return basePath;
+  const extensions = ['.js', '.mjs', '.cjs', '/index.js', '/index.mjs'];
+  for (const ext of extensions) {
+    if (fs.existsSync(basePath + ext)) return basePath + ext;
+  }
+  return null;
+}
+
+// 🚀 三轨贪婪型依赖入口探测器（Node22 ESM 官方算法 + pnpm 深度黑盒盲搜）
 function getPackageActualEntry(packageName: string) {
-  // 1. 🌟 优先使用 Node 官方核心层解析算法。
-  // 它能完美处理结构合法的现代高级 ESM/CJS 混合导出（如 fanger），直接返回绝对物理路径。
+  // 第一轨：利用 Node 22 原生 ESM 模块流解析（降维打击现代 ESM-Only 依赖包）
+  try {
+    const resolvedUrl = import.meta.resolve(packageName);
+    if (resolvedUrl) {
+      const resolvedPath = fileURLToPath(resolvedUrl);
+      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
+        return resolvedPath;
+      }
+    }
+  } catch (e) {}
+
+  // 第二轨：传统 CommonJS 核心层解析
   try {
     const nativePath = require.resolve(packageName);
-    if (nativePath) return nativePath;
-  } catch (e) {
-    // 如果报错（说明像 image-in-browser 一样 main 声明的文件在磁盘上根本不存在），则自动无缝降级到下方的扫盘逻辑
+    if (nativePath && fs.existsSync(nativePath)) return nativePath;
+  } catch (e) {}
+
+  // 第三轨：深度穿透 pnpm 虚拟依赖黑盒进行全盘物理扫描
+  const rootNodeModules = resolve(__dirname, 'node_modules');
+  let packageDir = join(rootNodeModules, packageName);
+  
+  // 如果根目录符号链接断裂，深入 .pnpm 依赖池盲搜
+  if (!fs.existsSync(packageDir)) {
+    const pnpmDir = join(rootNodeModules, '.pnpm');
+    if (fs.existsSync(pnpmDir)) {
+      try {
+        const dirs = fs.readdirSync(pnpmDir);
+        for (const d of dirs) {
+          const candidate = join(pnpmDir, d, 'node_modules', packageName);
+          if (fs.existsSync(candidate)) {
+            packageDir = candidate;
+            break;
+          }
+        }
+      } catch (e) {}
+    }
   }
 
-  const packageDir = resolve(__dirname, 'node_modules', packageName);
   if (!fs.existsSync(packageDir)) return packageName;
 
   const checkAndReturn = (relativePath: string) => {
-    const basePath = join(packageDir, relativePath);
-    if (fs.existsSync(basePath) && fs.statSync(basePath).isFile()) return basePath;
-    const extensions = ['.js', '.mjs', '.cjs', '/index.js', '/index.mjs'];
-    for (const ext of extensions) {
-      if (fs.existsSync(basePath + ext)) return basePath + ext;
-    }
-    return null;
+    return findExistingFileWithExt(join(packageDir, relativePath));
   };
 
   try {
@@ -54,49 +85,27 @@ function getPackageActualEntry(packageName: string) {
       const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
       
       if (pkg.exports) {
-        if (typeof pkg.exports === 'string') {
-          const res = checkAndReturn(pkg.exports);
-          if (res) return res;
-        }
+        if (typeof pkg.exports === 'string') { const res = checkAndReturn(pkg.exports); if (res) return res; }
         const exp = pkg.exports['.'] || pkg.exports;
         if (exp) {
-          if (typeof exp === 'string') {
-            const res = checkAndReturn(exp);
-            if (res) return res;
-          } else if (typeof exp === 'object') {
+          if (typeof exp === 'string') { const res = checkAndReturn(exp); if (res) return res; }
+          else if (typeof exp === 'object') {
             const val = exp.browser || exp.import || exp.module || exp.default;
-            if (typeof val === 'string') {
-              const res = checkAndReturn(val);
-              if (res) return res;
-            }
+            if (typeof val === 'string') { const res = checkAndReturn(val); if (res) return res; }
           }
         }
       }
-      
       if (pkg.browser) {
-        if (typeof pkg.browser === 'string') {
-          const res = checkAndReturn(pkg.browser);
-          if (res) return res;
-        }
+        if (typeof pkg.browser === 'string') { const res = checkAndReturn(pkg.browser); if (res) return res; }
         if (typeof pkg.browser === 'object') {
           for (const key in pkg.browser) {
             const val = pkg.browser[key];
-            if (typeof val === 'string') {
-              const res = checkAndReturn(val);
-              if (res) return res;
-            }
+            if (typeof val === 'string') { const res = checkAndReturn(val); if (res) return res; }
           }
         }
       }
-
-      if (typeof pkg.module === 'string') {
-        const res = checkAndReturn(pkg.module);
-        if (res) return res;
-      }
-      if (typeof pkg.main === 'string') {
-        const res = checkAndReturn(pkg.main);
-        if (res) return res;
-      }
+      if (typeof pkg.module === 'string') { const res = checkAndReturn(pkg.module); if (res) return res; }
+      if (typeof pkg.main === 'string') { const res = checkAndReturn(pkg.main); if (res) return res; }
     }
   } catch (e) {}
 
@@ -137,7 +146,7 @@ if (!process.env.VITEST) {
   }
 }
 
-// 🚀 核心双轨锁定绝对文件路径
+// 🚀 双轨全面锁定物理绝对文件路径
 const resolvedImageInBrowser = getPackageActualEntry('image-in-browser');
 const resolvedFanger = getPackageActualEntry('fanger');
 console.log(`[探针日志] image-in-browser 精准定位至: ${resolvedImageInBrowser}`);
@@ -243,7 +252,7 @@ export default defineConfig({
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       
-      // 🚀 强制锁定两个包的绝对路径，彻底堵死 Workbox 子编译的所有退路
+      // 🚀 给 PWA (Workbox) 喂入无懈可击的物理绝对路径
       'image-in-browser': resolvedImageInBrowser,
       'fanger': resolvedFanger,
     },
