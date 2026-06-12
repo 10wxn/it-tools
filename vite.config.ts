@@ -6,7 +6,7 @@ import wasm from 'vite-plugin-wasm';
 import { splashScreen } from 'vite-plugin-splash-screen';
 
 import { defineConfig } from 'vite';
-import vue from '@vitejs/plugin-vue'; // 🚀 确保标准 ESM 导入
+import vue from '@vitejs/plugin-vue'; 
 import vueJsx from '@vitejs/plugin-vue-jsx';
 import markdown from 'unplugin-vue-markdown/vite';
 import svgLoader from 'vite-svg-loader';
@@ -20,7 +20,7 @@ import Icons from 'unplugin-icons/vite';
 import IconsResolver from 'unplugin-icons/resolver';
 import VueI18n from '@intlify/unplugin-vue-i18n/vite';
 
-// 🚀 自愈函数：帮打包子插件（Workbox）绕过 package.json 里的错误 main 声明，精准定位文件
+// 安全的依赖入口探测器
 function getPackageActualEntry(packageName: string) {
   const packageDir = resolve(__dirname, 'node_modules', packageName);
   if (!fs.existsSync(packageDir)) return packageName;
@@ -34,7 +34,7 @@ function getPackageActualEntry(packageName: string) {
 
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
-      return candidate; // 只要文件真实存在，直接返回绝对路径供 PWA 插件强行读取
+      return candidate; 
     }
   }
   return packageName;
@@ -153,7 +153,7 @@ export default defineConfig({
   ],
   base: baseUrl,
   resolve: {
-    preserveSymlinks: true, // 🚀 终极核心补强：防止子插件在 pnpm 虚拟软链接中迷路
+    // 🚀 彻底移除 preserveSymlinks: true，让 pnpm 的依赖拓扑链恢复正常工作
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       'node:fs/promises': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
@@ -165,7 +165,6 @@ export default defineConfig({
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       
-      // 🚀 给子插件的强力带路别名
       'image-in-browser': getPackageActualEntry('image-in-browser'),
       'fanger': getPackageActualEntry('fanger'),
     },
