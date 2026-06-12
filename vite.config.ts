@@ -1,11 +1,12 @@
 import { URL, fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import fs from 'node:fs'; // 🚀 引入原生的文件系统模块
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import wasm from 'vite-plugin-wasm';
 import { splashScreen } from 'vite-plugin-splash-screen';
 
 import { defineConfig } from 'vite';
-import vue from '@vitejs/plugin-vue';
+import vue = require('@vitejs/plugin-vue');
 import vueJsx from '@vitejs/plugin-vue-jsx';
 import markdown from 'unplugin-vue-markdown/vite';
 import svgLoader from 'vite-svg-loader';
@@ -18,6 +19,46 @@ import { configDefaults } from 'vitest/config';
 import Icons from 'unplugin-icons/vite';
 import IconsResolver from 'unplugin-icons/resolver';
 import VueI18n from '@intlify/unplugin-vue-i18n/vite';
+
+// 🚀 核心黑魔法：编写一个安全的、不崩溃的依赖入口探测器
+function safeResolvePackageEntry(packageName: string) {
+  const packageDir = resolve(__dirname, 'node_modules', packageName);
+  
+  if (!fs.existsSync(packageDir)) {
+    return packageName; // 如果 node_modules 还没准备好，安全返回包名本身
+  }
+
+  try {
+    // 1. 尝试读取 package.json 看有没有更适合前端浏览器的字段 (browser 或 module)
+    const pkgJsonPath = join(packageDir, 'package.json');
+    if (fs.existsSync(pkgJsonPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
+      const targetField = pkg.browser || pkg.module || pkg.main;
+      if (targetField) {
+        const resolved = join(packageDir, targetField);
+        if (fs.existsSync(resolved)) return resolved;
+      }
+    }
+  } catch (e) {
+    // 忽略解析 JSON 的潜在错误
+  }
+
+  // 2. 备用暴破路径搜寻列表（避开已经失效的 lib/index.js 坑）
+  const candidates = [
+    join(packageDir, 'dist', 'index.js'),
+    join(packageDir, 'dist', 'index.mjs'),
+    join(packageDir, 'index.js'),
+    join(packageDir, 'main.js'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate; // 抓到一个存在的文件就立刻返回绝对路径
+    }
+  }
+
+  return packageName; // 实在找不到，死马当活马医返回原名
+}
 
 const baseUrl = process.env.BASE_URL || '/';
 
@@ -43,7 +84,6 @@ if (!process.env.VITEST) {
   }
 }
 
-// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     VueI18n({
@@ -144,9 +184,9 @@ export default defineConfig({
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       
-      // 🚀 别名修复系列：利用 Node 22 原生能力动态解析依赖包的精确物理入口，彻底解决打包器的路径迷路问题
-      'image-in-browser': fileURLToPath(new URL(import.meta.resolve('image-in-browser'))),
-      'fanger': fileURLToPath(new URL(import.meta.resolve('fanger'))),
+      // 🚀 应用安全探测别名，再也不怕 package.json 抽风和 Node 22 的强校验
+      'image-in-browser': safeResolvePackageEntry('image-in-browser'),
+      'fanger': safeResolvePackageEntry('fanger'),
     },
   },
   define: {
