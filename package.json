@@ -459,6 +459,9 @@
     "zx": "^8.8.5"
   },
   "pnpm": {
+    "neverBuiltDependencies": [
+      "isolated-vm"
+    ],
     "overrides": {
       "@vueuse/shared": "13.9.0",
       "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
