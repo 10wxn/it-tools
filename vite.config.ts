@@ -20,7 +20,7 @@ import Icons from 'unplugin-icons/vite';
 import IconsResolver from 'unplugin-icons/resolver';
 import VueI18n from '@intlify/unplugin-vue-i18n/vite';
 
-// 🚀 终极贪婪型依赖入口探测器：全面支持 exports 对象、browser 字典、及物理全盘扫描
+// 🚀 无懈可击型依赖入口探测器：全面支持 字符串/对象 混合型的 exports、browser 字段，并补齐文件名盲搜
 function getPackageActualEntry(packageName: string) {
   const packageDir = resolve(__dirname, 'node_modules', packageName);
   if (!fs.existsSync(packageDir)) return packageName;
@@ -30,20 +30,25 @@ function getPackageActualEntry(packageName: string) {
     if (fs.existsSync(pkgJsonPath)) {
       const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
       
-      // 1. 深度剖析条件高级 exports 条件分支
+      // 1. 完美解析字符串或对象格式的 exports
       if (pkg.exports) {
+        if (typeof pkg.exports === 'string' && fs.existsSync(join(packageDir, pkg.exports))) {
+          return join(packageDir, pkg.exports);
+        }
         const exp = pkg.exports['.'] || pkg.exports;
-        if (exp && typeof exp === 'object') {
-          const val = exp.browser || exp.import || exp.module || exp.default;
-          if (typeof val === 'string' && fs.existsSync(join(packageDir, val))) return join(packageDir, val);
+        if (exp) {
+          if (typeof exp === 'string' && fs.existsSync(join(packageDir, exp))) {
+            return join(packageDir, exp);
+          } else if (typeof exp === 'object') {
+            const val = exp.browser || exp.import || exp.module || exp.default;
+            if (typeof val === 'string' && fs.existsSync(join(packageDir, val))) return join(packageDir, val);
+          }
         }
       }
       
-      // 2. 解构 browser 字段（支持字符串与条件替换映射表对象）
+      // 2. 解析 browser 字典或字符串
       if (pkg.browser) {
-        if (typeof pkg.browser === 'string' && fs.existsSync(join(packageDir, pkg.browser))) {
-          return join(packageDir, pkg.browser);
-        }
+        if (typeof pkg.browser === 'string' && fs.existsSync(join(packageDir, pkg.browser))) return join(packageDir, pkg.browser);
         if (typeof pkg.browser === 'object') {
           for (const key in pkg.browser) {
             const val = pkg.browser[key];
@@ -52,21 +57,21 @@ function getPackageActualEntry(packageName: string) {
         }
       }
 
-      // 3. 基础 module / main 退路校验
+      // 3. 基础旧标准 module / main 校验
       if (typeof pkg.module === 'string' && fs.existsSync(join(packageDir, pkg.module))) return join(packageDir, pkg.module);
       if (typeof pkg.main === 'string' && fs.existsSync(join(packageDir, pkg.main))) return join(packageDir, pkg.main);
     }
   } catch (e) {
-    // 忽略异常结构
+    // 忽略异常
   }
 
-  // 4. 🚀 降维打击：如果上述元数据全部作妖，直接物理扫描磁盘上真实存在的编译成品
-  const targetDirs = [join(packageDir, 'dist'), join(packageDir, 'lib'), packageDir];
+  // 4. 🚀 物理级全盘暴破扫描：若元数据全部失效，强行搜寻磁盘上存在的合法 js/mjs 入口文件
+  const targetDirs = [join(packageDir, 'dist'), join(packageDir, 'lib'), join(packageDir, 'build'), packageDir];
   for (const dir of targetDirs) {
     if (fs.existsSync(dir)) {
       const files = fs.readdirSync(dir);
-      const bestMatch = files.find(f => ['index.js', 'index.mjs', 'main.js', 'index.browser.js'].includes(f)) 
-                     || files.find(f => f.endsWith('.js') || f.endsWith('.mjs'));
+      const bestMatch = files.find(f => ['index.js', 'index.mjs', 'main.js', 'index.browser.js', `${packageName}.js`, `${packageName}.mjs`].includes(f)) 
+                     || files.find(f => f.endsWith('.js') || f.endsWith('.mjs') || f.endsWith('.cjs'));
       if (bestMatch) return join(dir, bestMatch);
     }
   }
@@ -198,7 +203,7 @@ export default defineConfig({
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       
-      // 🚀 强制锁定物理绝对路径，彻底根治 PWA 工作流中所有潜在的路径迷路问题
+      // 🚀 强力精准带路别名映射表
       'image-in-browser': getPackageActualEntry('image-in-browser'),
       'fanger': getPackageActualEntry('fanger'),
     },
