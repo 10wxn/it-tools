@@ -23,16 +23,19 @@ import VueI18n from '@intlify/unplugin-vue-i18n/vite';
 
 const require = createRequire(import.meta.url);
 
+// 🚀 辅助工具：智能验证并补齐后缀（新增对 .ts / .tsx / .cjs 的全面支持）
 function findExistingFileWithExt(basePath: string) {
   if (fs.existsSync(basePath) && fs.statSync(basePath).isFile()) return basePath;
-  const extensions = ['.js', '.mjs', '.cjs', '/index.js', '/index.mjs'];
+  const extensions = ['.js', '.mjs', '.cjs', '.ts', '.tsx', '/index.js', '/index.mjs', '/index.ts'];
   for (const ext of extensions) {
     if (fs.existsSync(basePath + ext)) return basePath + ext;
   }
   return null;
 }
 
+// 🚀 三轨全能型依赖入口探测器
 function getPackageActualEntry(packageName: string) {
+  // 第一轨：利用 Node 22 原生 ESM 模块流解析
   try {
     const resolvedUrl = import.meta.resolve(packageName);
     if (resolvedUrl) {
@@ -43,11 +46,13 @@ function getPackageActualEntry(packageName: string) {
     }
   } catch (e) {}
 
+  // 第二轨：传统 CommonJS 核心层解析
   try {
     const nativePath = require.resolve(packageName);
     if (nativePath && fs.existsSync(nativePath)) return nativePath;
   } catch (e) {}
 
+  // 第三轨：深度穿透 pnpm 虚拟依赖黑盒进行全盘物理扫描
   const rootNodeModules = resolve(__dirname, 'node_modules');
   let packageDir = join(rootNodeModules, packageName);
   
@@ -103,12 +108,13 @@ function getPackageActualEntry(packageName: string) {
     }
   } catch (e) {}
 
+  // 🚀 第四轨：针对未编译的纯 TS 源码包进行全盘物理扫描（增加对 .ts 和 .tsx 的降维打击）
   const targetDirs = [join(packageDir, 'dist'), join(packageDir, 'lib'), join(packageDir, 'build'), join(packageDir, 'src'), packageDir];
   for (const dir of targetDirs) {
     if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
       const files = fs.readdirSync(dir);
-      const bestMatch = files.find(f => ['index.js', 'index.mjs', 'main.js', 'index.browser.js', `${packageName}.js`, `${packageName}.mjs`].includes(f)) 
-                     || files.find(f => f.endsWith('.js') || f.endsWith('.mjs') || f.endsWith('.cjs'));
+      const bestMatch = files.find(f => ['index.js', 'index.mjs', 'main.js', 'index.ts', 'main.ts', 'index.browser.js', `${packageName}.js`, `${packageName}.mjs`, `${packageName}.ts`].includes(f)) 
+                     || files.find(f => f.endsWith('.js') || f.endsWith('.mjs') || f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.cjs'));
       if (bestMatch) return join(dir, bestMatch);
     }
   }
@@ -129,12 +135,12 @@ if (!process.env.VITEST) {
   }
 }
 
+// 🚀 核心绝对路径雷达锁定
 const resolvedImageInBrowser = getPackageActualEntry('image-in-browser');
 const resolvedFanger = getPackageActualEntry('fanger');
 console.log(`[探针日志] image-in-browser 精准定位至: ${resolvedImageInBrowser}`);
 console.log(`[探针日志] fanger 精准定位至: ${resolvedFanger}`);
 
-// 🚀 声明基础基础别名映射
 const baseAliases: Record<string, string> = {
   '@': fileURLToPath(new URL('./src', import.meta.url)),
   'node:fs/promises': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
@@ -147,7 +153,7 @@ const baseAliases: Record<string, string> = {
   'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
 };
 
-// 🚀 核心防御防御逻辑：只有拿到绝对路径时才注入别名，严禁添加类似 'fanger': 'fanger' 的向导垃圾数据
+// 安全注入动态绝对别名映射
 if (resolvedImageInBrowser && resolvedImageInBrowser !== 'image-in-browser') {
   baseAliases['image-in-browser'] = resolvedImageInBrowser;
 }
@@ -185,7 +191,7 @@ export default defineConfig({
   ],
   base: baseUrl,
   resolve: {
-    alias: baseAliases // 🚀 挂载防御安全的动态映射表
+    alias: baseAliases
   },
   define: { 'import.meta.env.PACKAGE_VERSION': JSON.stringify(process.env.npm_package_version) },
   test: { exclude: [...configDefaults.exclude, '**/*.e2e.spec.ts'], server: { deps: { inline: ['otpauth-migration', 'proto'] } } },
