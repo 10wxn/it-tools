@@ -20,23 +20,57 @@ import Icons from 'unplugin-icons/vite';
 import IconsResolver from 'unplugin-icons/resolver';
 import VueI18n from '@intlify/unplugin-vue-i18n/vite';
 
-// 安全的依赖入口探测器
+// 🚀 终极贪婪型依赖入口探测器：全面支持 exports 对象、browser 字典、及物理全盘扫描
 function getPackageActualEntry(packageName: string) {
   const packageDir = resolve(__dirname, 'node_modules', packageName);
   if (!fs.existsSync(packageDir)) return packageName;
 
-  const candidates = [
-    join(packageDir, 'dist', 'index.js'),
-    join(packageDir, 'dist', 'index.mjs'),
-    join(packageDir, 'index.js'),
-    join(packageDir, 'main.js'),
-  ];
+  try {
+    const pkgJsonPath = join(packageDir, 'package.json');
+    if (fs.existsSync(pkgJsonPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
+      
+      // 1. 深度剖析条件高级 exports 条件分支
+      if (pkg.exports) {
+        const exp = pkg.exports['.'] || pkg.exports;
+        if (exp && typeof exp === 'object') {
+          const val = exp.browser || exp.import || exp.module || exp.default;
+          if (typeof val === 'string' && fs.existsSync(join(packageDir, val))) return join(packageDir, val);
+        }
+      }
+      
+      // 2. 解构 browser 字段（支持字符串与条件替换映射表对象）
+      if (pkg.browser) {
+        if (typeof pkg.browser === 'string' && fs.existsSync(join(packageDir, pkg.browser))) {
+          return join(packageDir, pkg.browser);
+        }
+        if (typeof pkg.browser === 'object') {
+          for (const key in pkg.browser) {
+            const val = pkg.browser[key];
+            if (typeof val === 'string' && fs.existsSync(join(packageDir, val))) return join(packageDir, val);
+          }
+        }
+      }
 
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate; 
+      // 3. 基础 module / main 退路校验
+      if (typeof pkg.module === 'string' && fs.existsSync(join(packageDir, pkg.module))) return join(packageDir, pkg.module);
+      if (typeof pkg.main === 'string' && fs.existsSync(join(packageDir, pkg.main))) return join(packageDir, pkg.main);
+    }
+  } catch (e) {
+    // 忽略异常结构
+  }
+
+  // 4. 🚀 降维打击：如果上述元数据全部作妖，直接物理扫描磁盘上真实存在的编译成品
+  const targetDirs = [join(packageDir, 'dist'), join(packageDir, 'lib'), packageDir];
+  for (const dir of targetDirs) {
+    if (fs.existsSync(dir)) {
+      const files = fs.readdirSync(dir);
+      const bestMatch = files.find(f => ['index.js', 'index.mjs', 'main.js', 'index.browser.js'].includes(f)) 
+                     || files.find(f => f.endsWith('.js') || f.endsWith('.mjs'));
+      if (bestMatch) return join(dir, bestMatch);
     }
   }
+
   return packageName;
 }
 
@@ -153,7 +187,6 @@ export default defineConfig({
   ],
   base: baseUrl,
   resolve: {
-    // 🚀 彻底移除 preserveSymlinks: true，让 pnpm 的依赖拓扑链恢复正常工作
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       'node:fs/promises': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
@@ -165,6 +198,7 @@ export default defineConfig({
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       
+      // 🚀 强制锁定物理绝对路径，彻底根治 PWA 工作流中所有潜在的路径迷路问题
       'image-in-browser': getPackageActualEntry('image-in-browser'),
       'fanger': getPackageActualEntry('fanger'),
     },
