@@ -1,11 +1,12 @@
 import { URL, fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import fs from 'node:fs'; 
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import wasm from 'vite-plugin-wasm';
 import { splashScreen } from 'vite-plugin-splash-screen';
 
 import { defineConfig } from 'vite';
-import vue from '@vitejs/plugin-vue'; 
+import vue from '@vitejs/plugin-vue'; // 🚀 确保标准 ESM 导入
 import vueJsx from '@vitejs/plugin-vue-jsx';
 import markdown from 'unplugin-vue-markdown/vite';
 import svgLoader from 'vite-svg-loader';
@@ -18,6 +19,26 @@ import { configDefaults } from 'vitest/config';
 import Icons from 'unplugin-icons/vite';
 import IconsResolver from 'unplugin-icons/resolver';
 import VueI18n from '@intlify/unplugin-vue-i18n/vite';
+
+// 🚀 自愈函数：帮打包子插件（Workbox）绕过 package.json 里的错误 main 声明，精准定位文件
+function getPackageActualEntry(packageName: string) {
+  const packageDir = resolve(__dirname, 'node_modules', packageName);
+  if (!fs.existsSync(packageDir)) return packageName;
+
+  const candidates = [
+    join(packageDir, 'dist', 'index.js'),
+    join(packageDir, 'dist', 'index.mjs'),
+    join(packageDir, 'index.js'),
+    join(packageDir, 'main.js'),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate; // 只要文件真实存在，直接返回绝对路径供 PWA 插件强行读取
+    }
+  }
+  return packageName;
+}
 
 const baseUrl = process.env.BASE_URL || '/';
 
@@ -132,6 +153,7 @@ export default defineConfig({
   ],
   base: baseUrl,
   resolve: {
+    preserveSymlinks: true, // 🚀 终极核心补强：防止子插件在 pnpm 虚拟软链接中迷路
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       'node:fs/promises': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
@@ -142,6 +164,10 @@ export default defineConfig({
       'onnxruntime-node': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+      
+      // 🚀 给子插件的强力带路别名
+      'image-in-browser': getPackageActualEntry('image-in-browser'),
+      'fanger': getPackageActualEntry('fanger'),
     },
   },
   define: {
