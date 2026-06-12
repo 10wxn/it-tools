@@ -143,6 +143,8 @@ export default defineConfig({
       'onnxruntime-node': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'unpdf/pdfjs': fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
       'webcrypto-liner-shim': !process.env.VERCEL ? 'webcrypto-liner-shim' : fileURLToPath(new URL('./src/_empty.ts', import.meta.url)),
+      // 🚀 修复 Vite 4 在现代 Node 环境下对特定包的路径解析失败问题
+      'image-in-browser': 'image-in-browser/dist/index.js',
     },
   },
   define: {
@@ -158,46 +160,24 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    // sourcemap: !process.env.VERCEL,
-    // minify: !process.env.VERCEL,
-    reportCompressedSize: !process.env.VERCEL,
-    // cssMinify: false,
-    // modulePreload: false,
+    sourcemap: false,               // 🚀 强制关闭源码映射，节省成倍的打包内存开销
+    minify: 'esbuild',              // 🚀 锁定 esbuild 高效压缩
+    reportCompressedSize: false,    // 🚀 关闭大小计算，防止大文件打包阶段计算超时与内存溢出
     rollupOptions: {
+      maxParallelFileOps: 1,        // 🚀 极其关键：限制并发处理文件数为 1，用时间换空间，严防 OOM
       external: ['regex', './out/isolated_vm', 'isolated-vm', 'onnxruntime-node', 'unpdf/pdfjs'],
       output: {
         format: 'es',
-        // manualChunks: (id) => {
-        //   // if (id.includes('monaco-editor')) return 'monaco-editor';
-        //   if (id.includes('tesseract.js')) return 'tesseract.js';
-        //   if (id.includes('pdfjs')) return 'pdfjs';
-        //   if (id.includes('unicode')) return 'unicode';
-        //   // if (id.includes('transformers')) return 'transformers';
-        //   // if (id.includes("node_modules")) {
-        //   //   return "vendor";
-        //   // }
-        // },
-        // sourcemapIgnoreList: (relativeSourcePath) => {
-        //   const normalizedPath = path.normalize(relativeSourcePath);
-        //   return normalizedPath.includes("node_modules");
-        // },
       },
       cache: false,
     },
   },
   optimizeDeps: {
-    include: ['isolated-vm', 'pdfjs-dist', 'onnxruntime-node', 'onnxruntime-web', 'unpdf', 'unpdf/pdfjs', ...(process.env.VERCEL ? ['webcrypto-liner-shim'] : [])], // optionally specify dependency name
+    include: ['isolated-vm', 'pdfjs-dist', 'onnxruntime-node', 'onnxruntime-web', 'unpdf', 'unpdf/pdfjs', ...(process.env.VERCEL ? ['webcrypto-liner-shim'] : [])],
     esbuildOptions: {
       supported: {
         'top-level-await': true,
       },
     },
   },
-  // server: {
-  // headers: {
-  //   'Cross-Origin-Resource-Policy': 'same-site',
-  //   'Cross-Origin-Opener-Policy': 'same-origin',
-  //   'Cross-Origin-Embedder-Policy': 'require-corp',
-  // },
-  // },
 });
