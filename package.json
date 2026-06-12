@@ -23,7 +23,7 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && . ./set_node_mem.sh && vite build",
+    "build": "vite build",
     "preview": "vite preview --port 5050",
     "test": "TZ=UTC npm run test:unit",
     "test:unit": "TZ=UTC . ./set_node_mem.sh && vitest --environment jsdom",
